@@ -2,19 +2,17 @@ import socket
 from ipaddress import ip_address, IPv4Address, IPv6Address
 import re
 
-# ASUNCIÓN: Se debe tener un archivo common_ports.py con este diccionario.
-# Si el archivo common_ports.py no existe, puedes descomentar y usar esta definición:
-# ports_and_services = {
-#     21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 
-#     80: "http", 110: "pop3", 143: "imap", 443: "https"
-# }
-
-# Intenta importar el diccionario de puertos (asumiendo que existe)
+# ASUNCIÓN: Se debe tener un archivo common_ports.py con el diccionario.
+# Si common_ports.py no existe en tu entorno, puedes descomentar la siguiente línea
+# y definir el diccionario aquí (aunque el entorno de FreeCodeCamp lo proporciona).
 try:
     from common_ports import ports_and_services
 except ImportError:
     # Fallback si common_ports.py no se encuentra (necesario para el modo verbose)
-    ports_and_services = {}
+    ports_and_services = {
+        21: "ftp", 22: "ssh", 23: "telnet", 25: "smtp", 53: "dns", 
+        80: "http", 110: "pop3", 143: "imap", 443: "https"
+    }
 
 
 def is_valid_ip(target):
@@ -33,19 +31,14 @@ def get_open_ports(target, port_range, verbose=False):
     start_port, end_port = port_range
     open_ports = []
     
-    # --- 1. Validar Rango de Puertos ---
-    if not (1 <= start_port <= 65535 and 1 <= end_port <= 65535):
-        # Aunque no es un requisito explícito de error, es buena práctica.
-        pass
-
-    # --- 2. Validar y Resolver Objetivo (Target) ---
+    # --- 1. Validar y Resolver Objetivo (Target) ---
 
     ip_addr = None
     hostname_resolved = None
     is_ip_passed = is_valid_ip(target) # Indica si el target original es una IP
 
     if is_ip_passed:
-        # El target es una IP, validamos el formato
+        # El target es una IP, validamos el formato y obtenemos la IP estandarizada
         try:
             addr = ip_address(target)
             ip_addr = str(addr)
@@ -57,12 +50,12 @@ def get_open_ports(target, port_range, verbose=False):
                 hostname_resolved = None
                 
         except ValueError:
-            # Aunque is_valid_ip ya debería haberlo capturado, es una doble verificación.
             return "Error: Invalid IP address"
             
     else:
         # El target es un nombre de host (URL), intentar resolución DNS
         try:
+            # Resolución DNS
             ip_addr = socket.gethostbyname(target)
             hostname_resolved = target
         except socket.gaierror:
@@ -70,12 +63,20 @@ def get_open_ports(target, port_range, verbose=False):
         except Exception:
             return "Error: Invalid hostname"
 
+    # --- 2. Validación de Rango de Puertos ---
+    
+    # En caso de que el rango de puertos sea inválido o desordenado, aunque las pruebas lo eviten.
+    if start_port > end_port:
+         # No es un requisito de error específico, pero previene errores lógicos.
+        pass
+
     # --- 3. Escaneo de Puertos ---
 
-    # Establecer un tiempo de espera para la conexión. 1 segundo es razonable.
-    socket.setdefaulttimeout(1) 
+    # AUMENTO DEL TIMEOUT: Se establece en 3 segundos para evitar fallos por latencia en la prueba unitaria.
+    socket.setdefaulttimeout(3) 
 
     for port in range(start_port, end_port + 1):
+        # AF_INET para IPv4, SOCK_STREAM para TCP
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         
         try:
@@ -99,11 +100,11 @@ def get_open_ports(target, port_range, verbose=False):
     # --- Modo Detallado (Verbose) ---
 
     # 4a. Construir el encabezado
-    if is_ip_passed and hostname_resolved:
-        # Se pasó una IP y se obtuvo el nombre de host (ej: scanme.nmap.org (45.33.32.156))
+    if is_ip_passed and hostname_resolved and hostname_resolved != target:
+        # Se pasó una IP y se obtuvo un nombre de host (ej: scanme.nmap.org (45.33.32.156))
         header = f"Open ports for {hostname_resolved} ({target})"
-    elif is_ip_passed and not hostname_resolved:
-        # Se pasó una IP, pero no se pudo obtener el nombre de host (ej: 209.216.230.240)
+    elif is_ip_passed:
+        # Se pasó una IP (sin nombre de host o nombre de host igual a la IP)
         header = f"Open ports for {target}"
     else:
         # Se pasó un nombre de host (URL) (ej: www.stackoverflow.com (151.101.129.208))
@@ -121,6 +122,7 @@ def get_open_ports(target, port_range, verbose=False):
 
     # 4c. Combinar todas las partes
     verbose_string = header + "\n"
+    # Encabezado de la tabla (9 espacios para PORT + 4 espacios para separación)
     verbose_string += "PORT     SERVICE" + "\n"
     verbose_string += "\n".join(table_rows)
 
